@@ -244,6 +244,8 @@ namespace lms::db
             Wt::Dbo::hasMany(a, _clusters, Wt::Dbo::ManyToMany, "track_cluster", "", Wt::Dbo::OnDeleteCascade);
         }
 
+        static int count(Session &session, const FindParameters &parameters);
+
     private:
         friend class Session;
         static pointer create(Session& session);
@@ -286,6 +288,7 @@ namespace lms::db
         Wt::Dbo::ptr<MediaLibrary>                          _mediaLibrary;
         Wt::Dbo::collection<Wt::Dbo::ptr<TrackArtistLink>>  _trackArtistLinks;
         Wt::Dbo::collection<Wt::Dbo::ptr<Cluster>>          _clusters;
+
     };
 
     namespace Debug

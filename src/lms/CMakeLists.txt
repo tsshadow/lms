@@ -51,7 +51,9 @@ add_executable(lms
 	ui/resource/AudioTranscodingResource.cpp
 	ui/resource/CoverResource.cpp
 	ui/resource/DownloadResource.cpp
-	)
+        ../libs/ts/RequestCacher.cpp
+        ../libs/ts/RequestCacher.h
+)
 
 target_include_directories(lms PRIVATE
 	ui/
