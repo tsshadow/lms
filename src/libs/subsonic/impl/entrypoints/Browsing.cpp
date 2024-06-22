@@ -38,8 +38,9 @@
 #include "ParameterParsing.hpp"
 #include "SubsonicId.hpp"
 #include "Utils.hpp"
-#include "../../../ts/RequestCacher.h"
+#include "RequestCacher.h"
 
+static auto reqCacher = RequestCacher::getInstance();
 namespace lms::api::subsonic
 {
     using namespace db;
@@ -105,14 +106,14 @@ namespace lms::api::subsonic
                 parameters.setSortMethod(ArtistSortMethod::SortName);
                 switch (context.user->getSubsonicArtistListMode())
                 {
-                case SubsonicArtistListMode::AllArtists:
-                    break;
-                case SubsonicArtistListMode::ReleaseArtists:
-                    parameters.setLinkType(TrackArtistLinkType::ReleaseArtist);
-                    break;
-                case SubsonicArtistListMode::TrackArtists:
-                    parameters.setLinkType(TrackArtistLinkType::Artist);
-                    break;
+                    case SubsonicArtistListMode::AllArtists:
+                        break;
+                    case SubsonicArtistListMode::ReleaseArtists:
+                        parameters.setLinkType(TrackArtistLinkType::ReleaseArtist);
+                        break;
+                    case SubsonicArtistListMode::TrackArtists:
+                        parameters.setLinkType(TrackArtistLinkType::Artist);
+                        break;
                 }
             }
             parameters.setMediaLibrary(mediaLibrary);
@@ -190,8 +191,8 @@ namespace lms::api::subsonic
 
                 const auto artistTracks{ Track::findIds(context.dbSession, params) };
                 tracks.insert(std::end(tracks),
-                    std::begin(artistTracks.results),
-                    std::end(artistTracks.results));
+                              std::begin(artistTracks.results),
+                              std::end(artistTracks.results));
             }
 
             return tracks;
@@ -221,8 +222,8 @@ namespace lms::api::subsonic
 
                 const auto releaseTracks{ Track::findIds(context.dbSession, params) };
                 tracks.insert(std::end(tracks),
-                    std::begin(releaseTracks.results),
-                    std::end(releaseTracks.results));
+                              std::begin(releaseTracks.results),
+                              std::end(releaseTracks.results));
             }
 
             return tracks;
@@ -275,12 +276,12 @@ namespace lms::api::subsonic
 
         auto transaction{ context.dbSession.createReadTransaction() };
         MediaLibrary::find(context.dbSession, [&](const MediaLibrary::pointer& library)
-            {
-                Response::Node& musicFolderNode{ musicFoldersNode.createArrayChild("musicFolder") };
+        {
+            Response::Node& musicFolderNode{ musicFoldersNode.createArrayChild("musicFolder") };
 
-                musicFolderNode.setAttribute("id", idToString(library->getId()));
-                musicFolderNode.setAttribute("name", library->getName());
-            });
+            musicFolderNode.setAttribute("id", idToString(library->getId()));
+            musicFolderNode.setAttribute("name", library->getName());
+        });
 
         return response;
     }
@@ -312,9 +313,9 @@ namespace lms::api::subsonic
 
             // TODO: this does not scale when a lot of artists are present
             Artist::find(context.dbSession, Artist::FindParameters{}.setSortMethod(ArtistSortMethod::SortName), [&](const Artist::pointer& artist)
-                {
-                    directoryNode.addArrayChild("child", createArtistNode(context, artist, context.user, false /* no id3 */));
-                });
+            {
+                directoryNode.addArrayChild("child", createArtistNode(context, artist, context.user, false /* no id3 */));
+            });
         }
         else if (artistId)
         {
@@ -327,9 +328,9 @@ namespace lms::api::subsonic
             directoryNode.setAttribute("name", utils::makeNameFilesystemCompatible(artist->getName()));
 
             Release::find(context.dbSession, Release::FindParameters{}.setArtist(*artistId), [&](const Release::pointer& release)
-                {
-                    directoryNode.addArrayChild("child", createAlbumNode(context, release, context.user, false /* no id3 */));
-                });
+            {
+                directoryNode.addArrayChild("child", createAlbumNode(context, release, context.user, false /* no id3 */));
+            });
         }
         else if (releaseId)
         {
@@ -342,9 +343,9 @@ namespace lms::api::subsonic
             directoryNode.setAttribute("name", utils::makeNameFilesystemCompatible(release->getName()));
 
             Track::find(context.dbSession, Track::FindParameters{}.setRelease(*releaseId).setSortMethod(TrackSortMethod::Release), [&](const Track::pointer& track)
-                {
-                    directoryNode.addArrayChild("child", createSongNode(context, track, context.user));
-                });
+            {
+                directoryNode.addArrayChild("child", createSongNode(context, track, context.user));
+            });
         }
         else
             throw BadParameterGenericError{ "id" };
@@ -368,7 +369,20 @@ namespace lms::api::subsonic
         Response response{ Response::createOkResponse(context.serverProtocolVersion) };
         std::optional<std::string> year {getParameterAs<std::string>(context.parameters, "year")};
         std::optional<std::string> length {getParameterAs<std::string>(context.parameters, "length")};
+        std::string key = "genre";
 
+        if ((year.has_value() && year.value() != "-1") || (length.has_value() && !length.value().empty())) {
+            if (year.has_value()) {
+                key += year.value();
+            }
+            if (length.has_value()) {
+                key += length.value();
+            }
+        }
+
+        if (reqCacher->hasCache(key)) {
+            return reqCacher->getCache(key, "genre", std::move(response));
+        }
         Response::Node& genresNode{ response.createNode("genres") };
 
         auto transaction{ context.dbSession.createReadTransaction() };
@@ -389,12 +403,15 @@ namespace lms::api::subsonic
                     }
                     params.setClusters(searchClusters);
                     auto  results = Track::count(context.dbSession, params);
-                    if (results)
+                    if (results) {
                         genresNode.addArrayChild("genre", createGenreNode(cluster, results));
+                        reqCacher->addToCache(key, cluster, results);
+                    }
                 }
                 else
                 {
                     genresNode.addArrayChild("genre", createGenreNode(cluster));
+                    reqCacher->addToCache(key, cluster, cluster->getTrackCount());
                 }
             }
         }
@@ -404,10 +421,23 @@ namespace lms::api::subsonic
 
     Response handleGetMoodRequest(RequestContext& context)
     {
-        auto reqCacher = RequestCacher::getInstance();
         Response response{ Response::createOkResponse(context.serverProtocolVersion) };
         std::optional<std::string> year {getParameterAs<std::string>(context.parameters, "year")};
         std::optional<std::string> length {getParameterAs<std::string>(context.parameters, "length")};
+        std::string key = "mood";
+
+        if ((year.has_value() && year.value() != "-1") || (length.has_value() && !length.value().empty())) {
+            if (year.has_value()) {
+                key += year.value();
+            }
+            if (length.has_value()) {
+                key += length.value();
+            }
+        }
+
+        if (reqCacher->hasCache(key)) {
+            return reqCacher->getCache(key, "mood", std::move(response));
+        }
 
         Response::Node& moodNode{ response.createNode("mood") };
 
@@ -429,12 +459,15 @@ namespace lms::api::subsonic
                     }
                     params.setClusters(searchClusters);
                     auto  results = Track::count(context.dbSession, params);
-                    if (results)
+                    if (results) {
                         moodNode.addArrayChild("mood", createGenreNode(cluster, results));
+                        reqCacher->addToCache(key, cluster, results);
+                    }
                 }
                 else
                 {
                     moodNode.addArrayChild("mood", createGenreNode(cluster));
+                    reqCacher->addToCache(key, cluster, cluster->getTrackCount());
                 }
             }
         }
