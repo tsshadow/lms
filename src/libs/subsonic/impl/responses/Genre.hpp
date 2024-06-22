@@ -29,5 +29,6 @@ namespace lms::db
 
 namespace lms::api::subsonic
 {
+    Response::Node createGenreNode(const db::ObjectPtr<db::Cluster>& cluster, int songCount);
     Response::Node createGenreNode(const db::ObjectPtr<db::Cluster>& cluster);
 }

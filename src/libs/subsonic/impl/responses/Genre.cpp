@@ -33,4 +33,15 @@ namespace lms::api::subsonic
 
         return clusterNode;
     }
+
+    Response::Node createGenreNode(const db::Cluster::pointer& cluster, int songCount)
+    {
+        Response::Node clusterNode;
+
+        clusterNode.setValue(cluster->getName());
+        clusterNode.setAttribute("songCount", songCount);
+        clusterNode.setAttribute("albumCount", cluster->getReleasesCount());
+
+        return clusterNode;
+    }
 }

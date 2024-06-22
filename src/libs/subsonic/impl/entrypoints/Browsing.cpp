@@ -38,6 +38,7 @@
 #include "ParameterParsing.hpp"
 #include "SubsonicId.hpp"
 #include "Utils.hpp"
+#include "../../../ts/RequestCacher.h"
 
 namespace lms::api::subsonic
 {
@@ -351,9 +352,22 @@ namespace lms::api::subsonic
         return response;
     }
 
+    ClusterId BGetCluster(std::string value, std::string name, RequestContext& context)
+    {
+        auto clusterType{ ClusterType::find(context.dbSession, name) };
+        if (!clusterType)
+            throw RequestedDataNotFoundError{};
+        auto cluster{clusterType->getCluster(value)};
+        if (!cluster)
+            throw RequestedDataNotFoundError{};
+        return cluster->getId();
+    }
+
     Response handleGetGenresRequest(RequestContext& context)
     {
         Response response{ Response::createOkResponse(context.serverProtocolVersion) };
+        std::optional<std::string> year {getParameterAs<std::string>(context.parameters, "year")};
+        std::optional<std::string> length {getParameterAs<std::string>(context.parameters, "length")};
 
         Response::Node& genresNode{ response.createNode("genres") };
 
@@ -363,9 +377,26 @@ namespace lms::api::subsonic
         if (clusterType)
         {
             const auto clusters{ clusterType->getClusters() };
-
-            for (const Cluster::pointer& cluster : clusters)
-                genresNode.addArrayChild("genre", createGenreNode(cluster));
+            for (const Cluster::pointer& cluster : clusters) {
+                Track::FindParameters params;
+                std::vector<ClusterId> searchClusters = {cluster->getId()};
+                if ((year.has_value() && year.value() != "-1") || (length.has_value() && !length.value().empty())) {
+                    if (year.has_value()){
+                        searchClusters.push_back(BGetCluster(year.value(), "YEAR", context));
+                    }
+                    if (length.has_value()) {
+                        searchClusters.push_back(BGetCluster(length.value(), "LENGTH", context));
+                    }
+                    params.setClusters(searchClusters);
+                    auto  results = Track::count(context.dbSession, params);
+                    if (results)
+                        genresNode.addArrayChild("genre", createGenreNode(cluster, results));
+                }
+                else
+                {
+                    genresNode.addArrayChild("genre", createGenreNode(cluster));
+                }
+            }
         }
 
         return response;
@@ -373,8 +404,10 @@ namespace lms::api::subsonic
 
     Response handleGetMoodRequest(RequestContext& context)
     {
+        auto reqCacher = RequestCacher::getInstance();
         Response response{ Response::createOkResponse(context.serverProtocolVersion) };
-        std::optional<int> year {getParameterAs<int>(context.parameters, "year")};
+        std::optional<std::string> year {getParameterAs<std::string>(context.parameters, "year")};
+        std::optional<std::string> length {getParameterAs<std::string>(context.parameters, "length")};
 
         Response::Node& moodNode{ response.createNode("mood") };
 
@@ -384,10 +417,26 @@ namespace lms::api::subsonic
         if (clusterType)
         {
             const auto clusters{ clusterType->getClusters() };
-
-            for (const Cluster::pointer& cluster : clusters)
-                if (!year.has_value() || year==-1)
+            for (const Cluster::pointer& cluster : clusters) {
+                Track::FindParameters params;
+                std::vector<ClusterId> searchClusters = {cluster->getId()};
+                if ((year.has_value() && year.value() != "-1") || (length.has_value() && !length.value().empty())) {
+                    if (year.has_value()){
+                        searchClusters.push_back(BGetCluster(year.value(), "YEAR", context));
+                    }
+                    if (length.has_value()) {
+                        searchClusters.push_back(BGetCluster(length.value(), "LENGTH", context));
+                    }
+                    params.setClusters(searchClusters);
+                    auto  results = Track::count(context.dbSession, params);
+                    if (results)
+                        moodNode.addArrayChild("mood", createGenreNode(cluster, results));
+                }
+                else
+                {
                     moodNode.addArrayChild("mood", createGenreNode(cluster));
+                }
+            }
         }
 
         return response;

@@ -184,6 +184,48 @@ namespace lms::db
         }
 
         template <typename ResultType>
+        Wt::Dbo::Query<ResultType> createCountQuery(Session& session, const Track::FindParameters& params)
+        {
+            session.checkReadTransaction();
+
+            auto query{ session.getDboSession()->query<ResultType>("SELECT COUNT(*) FROM track t") };
+
+            assert(params.keywords.empty() || params.name.empty());
+            for (std::string_view keyword : params.keywords)
+                query.where("t.name LIKE ? ESCAPE '" ESCAPE_CHAR_STR "'").bind("%" + utils::escapeLikeKeyword(keyword) + "%");
+
+            if (!params.name.empty())
+                query.where("t.name = ?").bind(params.name);
+
+            if (params.clusters.size() == 1)
+            {
+                // optim
+                query.join("track_cluster t_c ON t_c.track_id = t.id")
+                        .where("t_c.cluster_id = ?").bind(params.clusters.front());
+            }
+            else if (params.clusters.size() > 1)
+            {
+                std::ostringstream oss;
+                oss << "t.id IN (SELECT DISTINCT t.id FROM track t"
+                       " INNER JOIN track_cluster t_c ON t_c.track_id = t.id";
+
+                WhereClause clusterClause;
+                for (const ClusterId clusterId : params.clusters)
+                {
+                    clusterClause.Or(WhereClause("t_c.cluster_id = ?"));
+                    query.bind(clusterId);
+                }
+
+                oss << " " << clusterClause.get();
+                oss << " GROUP BY t.id HAVING COUNT(*) = " << params.clusters.size() << ")";
+
+                query.where(oss.str());
+            }
+
+            return query;
+        }
+
+        template <typename ResultType>
         Wt::Dbo::Query<ResultType> createQuery(Session& session, const Track::FindParameters& params)
         {
             std::string_view itemToSelect;
@@ -313,6 +355,15 @@ namespace lms::db
         auto query{ createQuery<TrackId>(session, parameters) };
         return utils::execRangeQuery<TrackId>(query, parameters.range);
     }
+
+    int Track::count(Session& session, const FindParameters& parameters)
+    {
+        session.checkReadTransaction();
+
+        auto query{ createCountQuery<int>(session, parameters) };
+        return utils::fetchQuerySingleResult(query);
+    }
+
 
     RangeResults<Track::pointer> Track::find(Session& session, const FindParameters& parameters)
     {
