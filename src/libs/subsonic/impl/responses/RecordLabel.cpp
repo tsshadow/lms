@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023 Emeric Poupon
+ * Copyright (C) 2024 Emeric Poupon
  *
  * This file is part of LMS.
  *
@@ -17,15 +17,18 @@
  * along with LMS.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#include "responses/RecordLabel.hpp"
 
-#include "RequestContext.hpp"
-#include "SubsonicResponse.hpp"
+#include "database/Release.hpp"
 
 namespace lms::api::subsonic
 {
-    Response handleStarRequest(RequestContext& context);
-    Response handleUnstarRequest(RequestContext& context);
-    Response handleSetRating(RequestContext& context);
-    Response handleScrobble(RequestContext& context);
+    Response::Node createRecordLabel(const db::ObjectPtr<db::Label>& label)
+    {
+        Response::Node recordLabelNode;
+
+        recordLabelNode.setAttribute("name", label->getName());
+
+        return recordLabelNode;
+    }
 } // namespace lms::api::subsonic
