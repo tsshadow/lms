@@ -49,6 +49,7 @@
 #include "endpoints/Searching.hpp"
 #include "endpoints/System.hpp"
 #include "endpoints/UserManagement.hpp"
+#include "endpoints/ListenBrainz.hpp"
 
 namespace lms::api::subsonic
 {
@@ -254,6 +255,8 @@ namespace lms::api::subsonic
             // Media library scanning
             { "/getScanStatus", { Scan::handleGetScanStatus } },
             { "/startScan", { Scan::handleStartScan, AuthenticationMode::Authenticated, { db::UserType::ADMIN } } },
+            { "/importListenBrainz", { handleImportListenBrainzRequest, AuthenticationMode::Authenticated } },
+
         };
 
         using MediaRetrievalHandlerFunc = std::function<void(RequestContext&, const Wt::Http::Request&, Wt::Http::Response&)>;

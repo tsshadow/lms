@@ -240,6 +240,7 @@ namespace lms::db
         static RangeResults<TrackId> findIdsTrackMBIDDuplicates(Session& session, std::optional<Range> range = std::nullopt);
         static RangeResults<TrackId> findIdsWithRecordingMBIDAndMissingFeatures(Session& session, std::optional<Range> range = std::nullopt);
         static void logPlay(Session& session, TrackId trackId, std::optional<UserId> userId);
+        static void importFromListenBrainz(Session& session, UserId userId, const std::string& username);
 
         // Accessors
         void setScanVersion(std::size_t version) { _scanVersion = version; }

@@ -21,6 +21,10 @@
 
 #include <Wt/Dbo/WtSqlTraits.h>
 
+#include "../../../../src/libs/rapidjson/document.h"
+#include "../../../../src/libs/rapidjson/rapidjson.h"
+#include "SqlQuery.hpp"
+#include "Utils.hpp"
 #include "core/ILogger.hpp"
 #include "database/Artist.hpp"
 #include "database/Cluster.hpp"
@@ -34,9 +38,6 @@
 #include "database/TrackFeatures.hpp"
 #include "database/TrackLyrics.hpp"
 #include "database/User.hpp"
-
-#include "SqlQuery.hpp"
-#include "Utils.hpp"
 #include "traits/IdTypeTraits.hpp"
 #include "traits/PartialDateTimeTraits.hpp"
 #include "traits/PathTraits.hpp"
@@ -223,6 +224,18 @@ namespace lms::db
             case TrackSortMethod::TrackList:
                 assert(params.trackList.isValid());
                 query.orderBy("t_l_e.id");
+            case TrackSortMethod::MostPlayed:
+                // Join track_play and count the plays for each track, ordered by the count
+                    query.join("track_play tp ON tp.track_id = t.id")
+                         .groupBy("t.id")
+                         .orderBy("COUNT(tp.track_id) DESC");  // Sorting by play count in descending order
+                break;
+            case TrackSortMethod::RecentlyPlayed:
+                // Join track_play and order by the most recent play date
+                    query.join("track_play tp ON tp.track_id = t.id")
+                         .groupBy("t.id")
+                         .orderBy("MAX(tp.played_at) DESC");  // Sorting by last played time in descending order
+                break;
             }
 
             return query;
@@ -687,13 +700,6 @@ namespace lms::db
             dbo.execute("INSERT INTO track_play (track_id, played_at) VALUES (?, CURRENT_TIMESTAMP)")
                 .bind(trackId);
         }
-
-        dbo.execute(
-               "UPDATE track SET "
-               "play_count = COALESCE(play_count, 0) + 1, "
-               "last_played = CURRENT_TIMESTAMP "
-               "WHERE id = ?")
-            .bind(trackId);
     }
 
     std::vector<std::vector<Cluster::pointer>> Track::getClusterGroups(const std::vector<ClusterTypeId>& clusterTypeIds, std::size_t size) const
@@ -732,6 +738,69 @@ namespace lms::db
             res.push_back(clusters);
 
         return res;
+    }
+
+    void Track::importFromListenBrainz(Session& session, UserId userId, const std::string& username)
+    {
+        // Build the URL for ListenBrainz API
+        std::string url = "https://api.listenbrainz.org/1/user/" + username + "/listens?count=1000";
+
+        // Fetch data from ListenBrainz API using curl
+        std::string json;
+        {
+            std::ostringstream cmd;
+            cmd << "curl -s " << url;
+            FILE* pipe = popen(cmd.str().c_str(), "r");
+            if (!pipe)
+                throw std::runtime_error("Failed to connect to ListenBrainz API");
+
+            char buffer[4096];
+            while (fgets(buffer, sizeof(buffer), pipe) != nullptr)
+                json += buffer;
+            pclose(pipe);
+        }
+
+        rapidjson::Document document;
+        if (document.Parse(json.c_str()).HasParseError())
+        {
+            throw std::runtime_error("Error parsing ListenBrainz response");
+        }
+
+        // Extract listens array
+        const auto& listens = document["payload"]["listens"];
+
+        // Iterate through the listens and log plays
+        for (const auto& listen : listens.GetArray())
+        {
+            std::string trackName = listen["track_metadata"]["track_name"].GetString();
+            std::string artistName = listen["track_metadata"]["artist_name"].GetString();
+            core::stringUtils::stringToLower(trackName);
+            core::stringUtils::stringToLower(artistName);
+            std::time_t ts = listen["listened_at"].GetInt64();
+
+            // Try to match the track in the database
+            auto query = session.getDboSession()->template query<Wt::Dbo::ptr<Track>>(R"(
+                select distinct t from track t
+                join track_artist_link l on l.track_id = t.id
+                where lower(t.name) = ? and lower(l.name) = ?
+            )");
+
+            query.bind(trackName);
+            query.bind(artistName);
+
+            if (auto match = query.resultValue(); match)
+            {
+                TrackId trackId = match.id();
+
+                // Log play
+                auto& dbo = *session.getDboSession();
+                dbo.execute(
+                       "INSERT INTO track_play (track_id, user_id, played_at) VALUES (?, ?, ?)")
+                    .bind(trackId)
+                    .bind(userId)
+                    .bind(Wt::WDateTime::fromTime_t(ts));
+            }
+        }
     }
 
     namespace Debug
