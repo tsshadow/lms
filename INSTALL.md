@@ -15,7 +15,7 @@
 - [First launch](#first-launch)
 # Installation
 ## Docker
-_Docker_ images are available, please see detailed instructions on https://hub.docker.com/r/epoupon/lms.
+_Docker_ images are available, please see detailed instructions on https://hub.docker.com/r/tsshadow/lms.
 ## Debian packages
 _Trixie_ packages are provided for _amd64_ architectures.
 As root, trust the following debian package provider and add it in your list of repositories:
@@ -49,7 +49,7 @@ You also need _Wt4_, which is not packaged on _Debian_. See [installation instru
 ### Build
 Get the latest stable release and build it:
 ```sh
-git clone https://github.com/epoupon/lms.git lms
+git clone https://github.com/tsshadow/lms.git lms
 cd lms
 mkdir build
 cd build
