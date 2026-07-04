@@ -31,7 +31,7 @@ namespace lms::scrobbling::musicManagement
         : _ioContext{ ioContext }
         , _db{ db }
         , _apiUrl{ core::Service<core::IConfig>::get()->getString("music-management-scrobbling-api-url", "https://muma-scrobble-service.teunschriks.nl/scrobble") }
-        , _apiKey{ core::Service<core::IConfig>::get()->getString("music-management-scrobbling-api-key", "Tarnish-Trespass-Dorsal-Sanding-Epilepsy-Unsavory9") }
+        , _apiKey{ core::Service<core::IConfig>::get()->getString("music-management-scrobbling-api-key", "453ecd33-3cb2-4ca4-a531-1677330bbaee") }
     {
         if (!_apiUrl.empty())
         {
